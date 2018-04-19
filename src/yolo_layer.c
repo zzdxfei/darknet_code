@@ -21,6 +21,7 @@ layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int 
     l.batch = batch;
     l.h = h;
     l.w = w;
+    // 属于某一类的概率，包围盒回归，包含目标的概率
     l.c = n*(classes + 4 + 1);
     l.out_w = l.w;
     l.out_h = l.h;
@@ -30,14 +31,17 @@ layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int 
     l.biases = calloc(total*2, sizeof(float));
     if(mask) l.mask = mask;
     else{
+        // 默认对应于n个anchor
         l.mask = calloc(n, sizeof(int));
         for(i = 0; i < n; ++i){
             l.mask[i] = i;
         }
     }
     l.bias_updates = calloc(n*2, sizeof(float));
+    // 输出向量
     l.outputs = h*w*n*(classes + 4 + 1);
     l.inputs = l.outputs;
+
     l.truths = 90*(4 + 1);
     l.delta = calloc(batch*l.outputs, sizeof(float));
     l.output = calloc(batch*l.outputs, sizeof(float));
@@ -156,12 +160,16 @@ void forward_yolo_layer(const layer l, network net)
     int count = 0;
     int class_count = 0;
     *(l.cost) = 0;
+
     for (b = 0; b < l.batch; ++b) {
         for (j = 0; j < l.h; ++j) {
             for (i = 0; i < l.w; ++i) {
-                for (n = 0; n < l.n; ++n) {
+                for (n = 0; n < l.n; ++n) {  // yolo v3中此处为3
+                    // 对于每一个anchor进行处理
                     int box_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 0);
+                    // l.biases中存储着anchors
                     box pred = get_yolo_box(l.output, l.biases, l.mask[n], box_index, i, j, l.w, l.h, net.w, net.h, l.w*l.h);
+
                     float best_iou = 0;
                     int best_t = 0;
                     for(t = 0; t < l.max_boxes; ++t){

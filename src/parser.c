@@ -283,12 +283,14 @@ int *parse_yolo_mask(char *a, int *num)
 {
     int *mask = 0;
     if(a){
+        // 计算mask中int的个数
         int len = strlen(a);
         int n = 1;
         int i;
         for(i = 0; i < len; ++i){
             if (a[i] == ',') ++n;
         }
+
         mask = calloc(n, sizeof(int));
         for(i = 0; i < n; ++i){
             int val = atoi(a);
@@ -308,6 +310,8 @@ layer parse_yolo(list *options, size_params params)
 
     char *a = option_find_str(options, "mask", 0);
     int *mask = parse_yolo_mask(a, &num);
+
+    // yolo v3中num为3
     layer l = make_yolo_layer(params.batch, params.w, params.h, num, total, mask, classes);
     assert(l.outputs == params.inputs);
 
@@ -326,9 +330,11 @@ layer parse_yolo(list *options, size_params params)
         int len = strlen(a);
         int n = 1;
         int i;
+        // 计算anchors中数字的个数
         for(i = 0; i < len; ++i){
             if (a[i] == ',') ++n;
         }
+        // anchors存放在biases中
         for(i = 0; i < n; ++i){
             float bias = atof(a);
             l.biases[i] = bias;

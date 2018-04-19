@@ -695,6 +695,7 @@ size_t rand_size_t()
         ((size_t)(rand()&0xff) << 0);
 }
 
+// 内部会交换min和max
 float rand_uniform(float min, float max)
 {
     if(max < min){

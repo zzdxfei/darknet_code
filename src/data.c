@@ -198,6 +198,7 @@ void correct_boxes(box_label *boxes, int n, float dx, float dy, float sx, float 
             boxes[i].right = 1. - swap;
         }
 
+        // 将value截断在(min, max)中
         boxes[i].left =  constrain(0, 1, boxes[i].left);
         boxes[i].right = constrain(0, 1, boxes[i].right);
         boxes[i].top =   constrain(0, 1, boxes[i].top);
@@ -419,6 +420,7 @@ void fill_truth_detection(char *path, int num_boxes, float *truth, int classes, 
     int count = 0;
     box_label *boxes = read_boxes(labelpath, &count);
     randomize_boxes(boxes, count);
+
     correct_boxes(boxes, count, dx, dy, sx, sy, flip);
     if(count > num_boxes) count = num_boxes;
     float x,y,w,h;
@@ -433,6 +435,7 @@ void fill_truth_detection(char *path, int num_boxes, float *truth, int classes, 
         h =  boxes[i].h;
         id = boxes[i].id;
 
+        // 如果box太小，跳过
         if ((w < .001 || h < .001)) {
             ++sub;
             continue;
@@ -961,16 +964,24 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, in
     data d = {0};
     d.shallow = 0;
 
+    // batch中图片的个数
     d.X.rows = n;
+    // 每张图片的存放位置
     d.X.vals = calloc(d.X.rows, sizeof(float*));
+    // 每个图片的长度
     d.X.cols = h*w*3;
 
     d.y = make_matrix(n, 5*boxes);
+
     for(i = 0; i < n; ++i){
         image orig = load_image_color(random_paths[i], 0, 0);
+
+        // 数据增强后的图像
         image sized = make_image(w, h, orig.c);
         fill_image(sized, .5);
 
+        // --------------------- 数据增强 --------------------- 
+        // 随机选择w,h
         float dw = jitter * orig.w;
         float dh = jitter * orig.h;
 
@@ -987,11 +998,15 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, in
             nh = nw / new_ar;
         }
 
+        // 随机选择x, y
         float dx = rand_uniform(0, w - nw);
         float dy = rand_uniform(0, h - nh);
 
+        // 将sized中的区域(dx, dy, nw, nh)赋值
+        // 对orig进行了全图插值，即orig对应于上述区域
         place_image(orig, nw, nh, dx, dy, sized);
 
+        // 光照增强
         random_distort_image(sized, hue, saturation, exposure);
 
         int flip = rand()%2;
@@ -999,6 +1014,7 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, in
         d.X.vals[i] = sized.data;
 
 
+        // 对ground truth进行变换
         fill_truth_detection(random_paths[i], boxes, d.y.vals[i], classes, flip, -dx/w, -dy/h, nw/w, nh/h);
 
         free_image(orig);
