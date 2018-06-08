@@ -619,6 +619,29 @@ image ipl_to_image(IplImage* src)
     return out;
 }
 
+void transform_image(image im) {
+    int h = im.h;
+    int w = im.w;
+    int c = im.c;
+
+    image copy_im = copy_image(im);
+    int i, j, k;
+    for(i = 0; i < h; ++i){
+        for(k= 0; k < c; ++k){
+            for(j = 0; j < w; ++j){
+                im.data[k*w*h + i*w + j] = copy_im.data[i*c*w + j*c + k] / 255.;
+            }
+        }
+    }
+
+    for(i = 0; i < im.w*im.h; ++i){
+        float swap = im.data[i];
+        im.data[i] = im.data[i+im.w*im.h*2];
+        im.data[i+im.w*im.h*2] = swap;
+    }
+    free_image(copy_im);
+}
+
 image load_image_cv(char *filename, int channels)
 {
     IplImage* src = 0;

@@ -959,6 +959,7 @@ data load_data_swag(char **paths, int n, int classes, float jitter)
 
 data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, int classes, float jitter, float hue, float saturation, float exposure)
 {
+    // 对训练图片乱序
     char **random_paths = get_random_paths(paths, n, m);
     int i;
     data d = {0};
@@ -986,7 +987,7 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, in
         float dh = jitter * orig.h;
 
         float new_ar = (orig.w + rand_uniform(-dw, dw)) / (orig.h + rand_uniform(-dh, dh));
-        float scale = rand_uniform(.25, 2);
+        float scale = rand_uniform(.8, 1.25);
 
         float nw, nh;
 
@@ -1012,7 +1013,6 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, in
         int flip = rand()%2;
         if(flip) flip_image(sized);
         d.X.vals[i] = sized.data;
-
 
         // 对ground truth进行变换
         fill_truth_detection(random_paths[i], boxes, d.y.vals[i], classes, flip, -dx/w, -dy/h, nw/w, nh/h);

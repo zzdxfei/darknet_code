@@ -559,6 +559,7 @@ void fill_network_boxes(network *net, int w, int h, float thresh, float hier, in
     }
 }
 
+// thresh, 输出大于thresh的包围盒
 detection *get_network_boxes(network *net, int w, int h, float thresh, float hier, int *map, int relative, int *num)
 {
     detection *dets = make_network_boxes(net, thresh, num);

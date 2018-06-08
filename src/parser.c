@@ -309,6 +309,7 @@ layer parse_yolo(list *options, size_params params)
     int num = total;
 
     char *a = option_find_str(options, "mask", 0);
+    // 数组mask为三个int，num为3
     int *mask = parse_yolo_mask(a, &num);
 
     // yolo v3中num为3
@@ -328,9 +329,9 @@ layer parse_yolo(list *options, size_params params)
     a = option_find_str(options, "anchors", 0);
     if(a){
         int len = strlen(a);
+        // 计算anchors中数字的个数 = num(,) + 1
         int n = 1;
         int i;
-        // 计算anchors中数字的个数
         for(i = 0; i < len; ++i){
             if (a[i] == ',') ++n;
         }

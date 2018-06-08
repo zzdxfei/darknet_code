@@ -10,6 +10,15 @@
 #include <string.h>
 #include <stdlib.h>
 
+// 初始化yolo层
+// @param batch  网络的batch size
+// @param w  网络输入图片的宽度
+// @param h  网络输入图片的高度
+// @param n  voc中为3
+// @param total  voc中为9
+// @param *mask  voc中为6,7,8
+// @param classes  voc中为20
+// 
 layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int classes)
 {
     int i;
@@ -22,12 +31,14 @@ layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int 
     l.h = h;
     l.w = w;
     // 属于某一类的概率，包围盒回归，包含目标的概率
+    // n为anchors的个数
     l.c = n*(classes + 4 + 1);
     l.out_w = l.w;
     l.out_h = l.h;
     l.out_c = l.c;
     l.classes = classes;
     l.cost = calloc(1, sizeof(float));
+    // 存放anchors
     l.biases = calloc(total*2, sizeof(float));
     if(mask) l.mask = mask;
     else{
@@ -38,7 +49,7 @@ layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int 
         }
     }
     l.bias_updates = calloc(n*2, sizeof(float));
-    // 输出向量
+    // 输出的长度
     l.outputs = h*w*n*(classes + 4 + 1);
     l.inputs = l.outputs;
 
@@ -58,12 +69,13 @@ layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int 
     l.delta_gpu = cuda_make_array(l.delta, batch*l.outputs);
 #endif
 
-    fprintf(stderr, "detection\n");
+    fprintf(stderr, "yolo\n");
     srand(0);
 
     return l;
 }
 
+// 输入输出长度重新计算，输出重新分配内存
 void resize_yolo_layer(layer *l, int w, int h)
 {
     l->w = w;
@@ -79,8 +91,8 @@ void resize_yolo_layer(layer *l, int w, int h)
     cuda_free(l->delta_gpu);
     cuda_free(l->output_gpu);
 
-    l->delta_gpu =     cuda_make_array(l->delta, l->batch*l->outputs);
-    l->output_gpu =    cuda_make_array(l->output, l->batch*l->outputs);
+    l->delta_gpu = cuda_make_array(l->delta, l->batch*l->outputs);
+    l->output_gpu = cuda_make_array(l->output, l->batch*l->outputs);
 #endif
 }
 
@@ -94,7 +106,8 @@ box get_yolo_box(float *x, float *biases, int n, int index, int i, int j, int lw
     return b;
 }
 
-float delta_yolo_box(box truth, float *x, float *biases, int n, int index, int i, int j, int lw, int lh, int w, int h, float *delta, float scale, int stride)
+float delta_yolo_box(box truth, float *x, float *biases, int n, int index, int i, int j, 
+        int lw, int lh, int w, int h, float *delta, float scale, int stride)
 {
     box pred = get_yolo_box(x, biases, n, index, i, j, lw, lh, w, h, stride);
     float iou = box_iou(pred, truth);
@@ -136,9 +149,11 @@ static int entry_index(layer l, int batch, int location, int entry)
 void forward_yolo_layer(const layer l, network net)
 {
     int i,j,b,t,n;
+    // 将net.input拷贝到l.output
     memcpy(l.output, net.input, l.outputs*l.batch*sizeof(float));
 
 #ifndef GPU
+    // 有2个特征图没有使用LOGISTIC
     for (b = 0; b < l.batch; ++b){
         for(n = 0; n < l.n; ++n){
             int index = entry_index(l, b, n*l.w*l.h, 0);
@@ -149,7 +164,9 @@ void forward_yolo_layer(const layer l, network net)
     }
 #endif
 
+    // set to zero
     memset(l.delta, 0, l.outputs * l.batch * sizeof(float));
+
     if(!net.train) return;
     float avg_iou = 0;
     float recall = 0;
@@ -159,57 +176,87 @@ void forward_yolo_layer(const layer l, network net)
     float avg_anyobj = 0;
     int count = 0;
     int class_count = 0;
+    // 损失函数置0
     *(l.cost) = 0;
 
-    for (b = 0; b < l.batch; ++b) {
+    for (b = 0; b < l.batch; ++b) {  // 对每一张图片
+        // ------------------ 第一阶段 ----------------------
+        // 对是否含有目标的损失进行计算
+        // --------------------------------------------------
         for (j = 0; j < l.h; ++j) {
             for (i = 0; i < l.w; ++i) {
-                for (n = 0; n < l.n; ++n) {  // yolo v3中此处为3
+                // 对图片上的每一个像素点
+                for (n = 0; n < l.n; ++n) {
                     // 对于每一个anchor进行处理
+                    
+                    // 第一项的存放位置
                     int box_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 0);
-                    // l.biases中存储着anchors
+                    // 获取该位置对应的box
                     box pred = get_yolo_box(l.output, l.biases, l.mask[n], box_index, i, j, l.w, l.h, net.w, net.h, l.w*l.h);
 
-                    float best_iou = 0;
-                    int best_t = 0;
+                    float best_iou = 0;  // iou的最高得分
+                    int best_t = 0;  // 最高得分的ground truth的索引
                     for(t = 0; t < l.max_boxes; ++t){
+                        // 获得ground truth
                         box truth = float_to_box(net.truth + t*(4 + 1) + b*l.truths, 1);
+                        // 遇到不足max_boxes时退出
                         if(!truth.x) break;
+                        // 计算iou
                         float iou = box_iou(pred, truth);
                         if (iou > best_iou) {
                             best_iou = iou;
                             best_t = t;
                         }
                     }
+
+                    // 包含目标的概率
                     int obj_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 4);
                     avg_anyobj += l.output[obj_index];
+
                     l.delta[obj_index] = 0 - l.output[obj_index];
+                    // 如果和ground truth的iou大于ignore_thresh，设置为0
                     if (best_iou > l.ignore_thresh) {
                         l.delta[obj_index] = 0;
                     }
+
+                    // 默认不会进行该部分 truth_thresh = 1
                     if (best_iou > l.truth_thresh) {
+                        // 包含目标的概率越大，delta越小
                         l.delta[obj_index] = 1 - l.output[obj_index];
 
+                        // ground truth的类别
                         int class = net.truth[best_t*(4 + 1) + b*l.truths + 4];
+
+                        // 可以对类别进行映射
                         if (l.map) class = l.map[class];
                         int class_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 4 + 1);
+
+                        // 计算类别的损失
                         delta_yolo_class(l.output, l.delta, class_index, class, l.classes, l.w*l.h, 0);
                         box truth = float_to_box(net.truth + best_t*(4 + 1) + b*l.truths, 1);
+                        // 计算包围盒的损失
                         delta_yolo_box(truth, l.output, l.biases, l.mask[n], box_index, i, j, l.w, l.h, net.w, net.h, l.delta, (2-truth.w*truth.h), l.w*l.h);
                     }
                 }
             }
         }
+
+        // ------------------ 第二阶段 ----------------------
+        // 对包围盒和类别损失进行计算
+        // --------------------------------------------------
+        // 对所有的ground truth
         for(t = 0; t < l.max_boxes; ++t){
             box truth = float_to_box(net.truth + t*(4 + 1) + b*l.truths, 1);
 
             if(!truth.x) break;
             float best_iou = 0;
             int best_n = 0;
-            i = (truth.x * l.w);
-            j = (truth.y * l.h);
+            i = (truth.x * l.w);  // 图像坐标
+            j = (truth.y * l.h);  // 图像坐标
             box truth_shift = truth;
             truth_shift.x = truth_shift.y = 0;
+
+            // 尝试所有的anchors，找到最适合的anchor的索引
             for(n = 0; n < l.total; ++n){
                 box pred = {0};
                 pred.w = l.biases[2*n]/net.w;
@@ -221,8 +268,10 @@ void forward_yolo_layer(const layer l, network net)
                 }
             }
 
+            // 如果不在l.mask中，返回-1；否则返回l.mask的索引
             int mask_n = int_index(l.mask, best_n, l.n);
             if(mask_n >= 0){
+                // 进行box和class损失的计算
                 int box_index = entry_index(l, b, mask_n*l.w*l.h + j*l.w + i, 0);
                 float iou = delta_yolo_box(truth, l.output, l.biases, best_n, box_index, i, j, l.w, l.h, net.w, net.h, l.delta, (2-truth.w*truth.h), l.w*l.h);
 
@@ -244,7 +293,8 @@ void forward_yolo_layer(const layer l, network net)
         }
     }
     *(l.cost) = pow(mag_array(l.delta, l.outputs * l.batch), 2);
-    printf("Region %d Avg IOU: %f, Class: %f, Obj: %f, No Obj: %f, .5R: %f, .75R: %f,  count: %d\n", net.index, avg_iou/count, avg_cat/class_count, avg_obj/count, avg_anyobj/(l.w*l.h*l.n*l.batch), recall/count, recall75/count, count);
+    printf("Region %d Avg IOU: %f, Class: %f, Obj: %f, No Obj: %f, .5R: %f, .75R: %f,  count: %d\n",
+       net.index, avg_iou/count, avg_cat/class_count, avg_obj/count, avg_anyobj/(l.w*l.h*l.n*l.batch), recall/count, recall75/count, count);
 }
 
 void backward_yolo_layer(const layer l, network net)
