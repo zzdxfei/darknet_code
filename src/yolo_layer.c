@@ -106,6 +106,7 @@ box get_yolo_box(float *x, float *biases, int n, int index, int i, int j, int lw
     return b;
 }
 
+// @param scale  delta放缩的比例
 float delta_yolo_box(box truth, float *x, float *biases, int n, int index, int i, int j, 
         int lw, int lh, int w, int h, float *delta, float scale, int stride)
 {
@@ -125,14 +126,24 @@ float delta_yolo_box(box truth, float *x, float *biases, int n, int index, int i
 }
 
 
+// @param output  yolo层的输出
+// @param delta  损失数组
+// @param index  class在output中的位置索引
+// @param class  类别索引
+// @param classes  总的类别个数
+// @param stride  l.w * l.h
+// @param avg_cat  对ground truth类进行概率相加
 void delta_yolo_class(float *output, float *delta, int index, int class, int classes, int stride, float *avg_cat)
 {
     int n;
     if (delta[index]){
+        // 概率越大越好
         delta[index + stride*class] = 1 - output[index + stride*class];
-        if(avg_cat) *avg_cat += output[index + stride*class];
+        if(avg_cat) *avg_cat += output[index + stride*class];  // 对ground truth类进行概率相加
         return;
     }
+    
+    // ground truth类的权重大
     for(n = 0; n < classes; ++n){
         delta[index + stride*n] = ((n == class)?1 : 0) - output[index + stride*n];
         if(n == class && avg_cat) *avg_cat += output[index + stride*n];
@@ -153,7 +164,10 @@ void forward_yolo_layer(const layer l, network net)
     memcpy(l.output, net.input, l.outputs*l.batch*sizeof(float));
 
 #ifndef GPU
-    // 有2个特征图没有使用LOGISTIC
+    // (------------- batch -----------)
+    // ((--anchor--),--------------)
+    // ((x, y, w, h, obj, class1, ... classn),--------------)
+    // w, h通道没有使用LOGISTIC
     for (b = 0; b < l.batch; ++b){
         for(n = 0; n < l.n; ++n){
             int index = entry_index(l, b, n*l.w*l.h, 0);
@@ -164,16 +178,16 @@ void forward_yolo_layer(const layer l, network net)
     }
 #endif
 
-    // set to zero
+    // 损失 set to zero
     memset(l.delta, 0, l.outputs * l.batch * sizeof(float));
 
     if(!net.train) return;
-    float avg_iou = 0;
-    float recall = 0;
-    float recall75 = 0;
-    float avg_cat = 0;
-    float avg_obj = 0;
-    float avg_anyobj = 0;
+    float avg_iou = 0;  // iou的平均值
+    float recall = 0;  // iou > 0.5的召回
+    float recall75 = 0;  // iou > 0.75的召回
+    float avg_cat = 0;  // 对每一个ground truth，其对应的anchor预测正确类的概率的均值
+    float avg_obj = 0;  // 对于每一个ground truth，其对应的anchor包含目标的均值
+    float avg_anyobj = 0;  // 每一个anchor包含目标的概率的均值
     int count = 0;
     int class_count = 0;
     // 损失函数置0
@@ -188,12 +202,12 @@ void forward_yolo_layer(const layer l, network net)
                 // 对图片上的每一个像素点
                 for (n = 0; n < l.n; ++n) {
                     // 对于每一个anchor进行处理
-                    
-                    // 第一项的存放位置
+                    // 包围盒存放位置
                     int box_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 0);
                     // 获取该位置对应的box
                     box pred = get_yolo_box(l.output, l.biases, l.mask[n], box_index, i, j, l.w, l.h, net.w, net.h, l.w*l.h);
 
+                    // 计算和ground truth中iou最大的ground truth的索引
                     float best_iou = 0;  // iou的最高得分
                     int best_t = 0;  // 最高得分的ground truth的索引
                     for(t = 0; t < l.max_boxes; ++t){
@@ -213,13 +227,15 @@ void forward_yolo_layer(const layer l, network net)
                     int obj_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 4);
                     avg_anyobj += l.output[obj_index];
 
+                    // 包含目标的概率越大，
                     l.delta[obj_index] = 0 - l.output[obj_index];
-                    // 如果和ground truth的iou大于ignore_thresh，设置为0
+                    // 如果和ground truth的iou大于ignore_thresh，忽略其损失
                     if (best_iou > l.ignore_thresh) {
                         l.delta[obj_index] = 0;
                     }
 
                     // 默认不会进行该部分 truth_thresh = 1
+                    // 如果和ground truth的iou大，则其包含目标的概率要尽量大
                     if (best_iou > l.truth_thresh) {
                         // 包含目标的概率越大，delta越小
                         l.delta[obj_index] = 1 - l.output[obj_index];
@@ -233,8 +249,9 @@ void forward_yolo_layer(const layer l, network net)
 
                         // 计算类别的损失
                         delta_yolo_class(l.output, l.delta, class_index, class, l.classes, l.w*l.h, 0);
-                        box truth = float_to_box(net.truth + best_t*(4 + 1) + b*l.truths, 1);
                         // 计算包围盒的损失
+                        box truth = float_to_box(net.truth + best_t*(4 + 1) + b*l.truths, 1);
+                        // truth的面积越大，delta扩大的比例越小 (2-truth.w*truth.h)
                         delta_yolo_box(truth, l.output, l.biases, l.mask[n], box_index, i, j, l.w, l.h, net.w, net.h, l.delta, (2-truth.w*truth.h), l.w*l.h);
                     }
                 }
@@ -244,21 +261,23 @@ void forward_yolo_layer(const layer l, network net)
         // ------------------ 第二阶段 ----------------------
         // 对包围盒和类别损失进行计算
         // --------------------------------------------------
-        // 对所有的ground truth
+        // 对ground truth中的每一个，查找预测该ground truth的anchor
         for(t = 0; t < l.max_boxes; ++t){
             box truth = float_to_box(net.truth + t*(4 + 1) + b*l.truths, 1);
 
             if(!truth.x) break;
             float best_iou = 0;
             int best_n = 0;
-            i = (truth.x * l.w);  // 图像坐标
-            j = (truth.y * l.h);  // 图像坐标
+            // 要预测该ground truth的anchor的图像坐标
+            i = (truth.x * l.w);
+            j = (truth.y * l.h);
             box truth_shift = truth;
             truth_shift.x = truth_shift.y = 0;
 
             // 尝试所有的anchors，找到最适合的anchor的索引
             for(n = 0; n < l.total; ++n){
                 box pred = {0};
+                // pred的x, y也是0
                 pred.w = l.biases[2*n]/net.w;
                 pred.h = l.biases[2*n+1]/net.h;
                 float iou = box_iou(pred, truth_shift);
@@ -268,6 +287,7 @@ void forward_yolo_layer(const layer l, network net)
                 }
             }
 
+            // 判断最佳的anchor索引是否在该层
             // 如果不在l.mask中，返回-1；否则返回l.mask的索引
             int mask_n = int_index(l.mask, best_n, l.n);
             if(mask_n >= 0){
@@ -292,6 +312,7 @@ void forward_yolo_layer(const layer l, network net)
             }
         }
     }
+    // mag_array 计算数组的平方根
     *(l.cost) = pow(mag_array(l.delta, l.outputs * l.batch), 2);
     printf("Region %d Avg IOU: %f, Class: %f, Obj: %f, No Obj: %f, .5R: %f, .75R: %f,  count: %d\n",
        net.index, avg_iou/count, avg_cat/class_count, avg_obj/count, avg_anyobj/(l.w*l.h*l.n*l.batch), recall/count, recall75/count, count);
@@ -299,7 +320,9 @@ void forward_yolo_layer(const layer l, network net)
 
 void backward_yolo_layer(const layer l, network net)
 {
-   axpy_cpu(l.batch*l.inputs, 1, l.delta, 1, net.delta, 1);
+    // net.delta += l.delta
+    // TODO(zzdxfei) ???
+    axpy_cpu(l.batch*l.inputs, 1, l.delta, 1, net.delta, 1);
 }
 
 void correct_yolo_boxes(detection *dets, int n, int w, int h, int netw, int neth, int relative)
@@ -330,6 +353,7 @@ void correct_yolo_boxes(detection *dets, int n, int w, int h, int netw, int neth
     }
 }
 
+// 对所有的anchor，获取其预测目标的概率大于thresh的个数
 int yolo_num_detections(layer l, float thresh)
 {
     int i, n;
@@ -348,6 +372,7 @@ int yolo_num_detections(layer l, float thresh)
 void avg_flipped_yolo(layer l)
 {
     int i,j,n,z;
+    // 翻转数据的起始位置
     float *flip = l.output + l.outputs;
     for (j = 0; j < l.h; ++j) {
         for (i = 0; i < l.w/2; ++i) {
@@ -382,8 +407,10 @@ int get_yolo_detections(layer l, int w, int h, int netw, int neth, float thresh,
         int col = i % l.w;
         for(n = 0; n < l.n; ++n){
             int obj_index  = entry_index(l, 0, n*l.w*l.h + i, 4);
-            float objectness = predictions[obj_index];
+            float objectness = predictions[obj_index];  // 包含目标的概率
             if(objectness <= thresh) continue;
+
+            // 存储box
             int box_index  = entry_index(l, 0, n*l.w*l.h + i, 0);
             dets[count].bbox = get_yolo_box(predictions, l.biases, l.mask[n], box_index, col, row, l.w, l.h, netw, neth, l.w*l.h);
             dets[count].objectness = objectness;

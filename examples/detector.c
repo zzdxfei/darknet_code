@@ -1,12 +1,20 @@
 #include "darknet.h"
 
-static int coco_ids[] = {1,2,3,4,5,6,7,8,9,10,11,13,14,15,16,17,18,19,20,21,22,23,24,25,27,28,31,32,33,34,35,36,37,38,39,40,41,42,43,44,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,67,70,72,73,74,75,76,77,78,79,80,81,82,84,85,86,87,88,89,90};
+static int coco_ids[] = {1,2,3,4,5,6,7,8,9,10,
+                         11,13,14,15,16,17,18,19,20,21,
+                         22,23,24,25,27,28,31,32,33,34,
+                         35,36,37,38,39,40,41,42,43,44,
+                         46,47,48,49,50,51,52,53,54,55,
+                         56,57,58,59,60,61,62,63,64,65,
+                         67,70,72,73,74,75,76,77,78,79,
+                         80,81,82,84,85,86,87,88,89,90};
 
 
 void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear)
 {
     list *options = read_data_cfg(datacfg);
     char *train_images = option_find_str(options, "train", "data/train.list");
+    char *valid_images = option_find_str(options, "valid", "data/valid.list");
     char *backup_directory = option_find_str(options, "backup", "/backup/");
 
     srand(time(0));
@@ -32,6 +40,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     int imgs = net->batch * net->subdivisions * ngpus;
     printf("Learning Rate: %g, Momentum: %g, Decay: %g\n", net->learning_rate, net->momentum, net->decay);
     data train, buffer;
+    data valid;
 
     layer l = net->layers[net->n - 1];
 
@@ -39,10 +48,28 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     float jitter = l.jitter;
 
     list *plist = get_paths(train_images);
+    list *valid_plist = get_paths(valid_images);
     //int N = plist->size;
     char **paths = (char **)list_to_array(plist);
+    char **valid_paths = (char **)list_to_array(valid_plist);
 
     load_args args = get_base_args(net);
+
+    // TODO(zzdxfei) 首先加载验证数据集
+    args.coords = l.coords;
+    args.paths = valid_paths;
+    args.n = plist->size;
+    args.m = plist->size;
+    args.num_boxes = l.max_boxes;
+    args.w = net->w;
+    args.h = net->h;
+    args.d = &valid;
+    args.type = DETECTION_DATA;
+    args.threads = 16;
+    pthread_t load_thread = load_data(args);
+    pthread_join(load_thread, 0);
+
+    // 加载训练数据集
     args.coords = l.coords;
     args.paths = paths;
     args.n = imgs;
@@ -55,7 +82,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     //args.type = INSTANCE_DATA;
     args.threads = 64;
 
-    pthread_t load_thread = load_data(args);
+    load_thread = load_data(args);
     double time;
     int count = 0;
     //while(i*imgs < N*120){
@@ -148,6 +175,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 #ifdef GPU
     if(ngpus != 1) sync_nets(nets, ngpus, 0);
 #endif
+    free_data(valid);
     char buff[256];
     sprintf(buff, "%s/%s_final.weights", backup_directory, base);
     save_weights(net, buff);
@@ -188,6 +216,7 @@ static void print_cocos(FILE *fp, char *image_path, detection *dets, int num_box
     }
 }
 
+// box的坐标从1开始
 void print_detector_detections(FILE **fps, char *id, detection *dets, int total, int classes, int w, int h)
 {
     int i, j;
@@ -368,6 +397,7 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
     char *valid_images = option_find_str(options, "valid", "data/train.list");
     char *name_list = option_find_str(options, "names", "data/names.list");
     char *prefix = option_find_str(options, "results", "results");
+    // 每个类别的名字
     char **names = get_labels(name_list);
     char *mapf = option_find_str(options, "map", 0);
     int *map = 0;
@@ -379,9 +409,12 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
     srand(time(0));
 
     list *plist = get_paths(valid_images);
+    // 每张测试图片的路径
     char **paths = (char **)list_to_array(plist);
 
+    // 输出层
     layer l = net->layers[net->n-1];
+    // 输出层的类别个数
     int classes = l.classes;
 
     char buff[1024];
@@ -390,6 +423,7 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
     FILE **fps = 0;
     int coco = 0;
     int imagenet = 0;
+    // coco
     if(0==strcmp(type, "coco")){
         if(!outfile) outfile = "coco_results";
         snprintf(buff, 1024, "%s/%s.json", prefix, outfile);
@@ -402,8 +436,10 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
         fp = fopen(buff, "w");
         imagenet = 1;
         classes = 200;
+    // voc
     } else {
         if(!outfile) outfile = "comp4_det_test_";
+        // 每一类一个文件
         fps = calloc(classes, sizeof(FILE *));
         for(j = 0; j < classes; ++j){
             snprintf(buff, 1024, "%s/%s%s.txt", prefix, outfile, names[j]);
@@ -411,13 +447,13 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
         }
     }
 
-
+    // 测试图片的个数
     int m = plist->size;
     int i=0;
     int t;
 
     float thresh = .005;
-    float nms = .45;
+    float nms = .3;
 
     int nthreads = 4;
     image *val = calloc(nthreads, sizeof(image));
