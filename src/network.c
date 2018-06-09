@@ -185,6 +185,7 @@ network *make_network(int n)
     return net;
 }
 
+// 每经过一层，net.input都会更新
 void forward_network(network *netp)
 {
 #ifdef GPU
@@ -199,6 +200,7 @@ void forward_network(network *netp)
         net.index = i;
         layer l = net.layers[i];
         if(l.delta){
+            // l.delta 初始化为0.0
             fill_cpu(l.outputs * l.batch, 0, l.delta, 1);
         }
         l.forward(l, net);
@@ -207,6 +209,7 @@ void forward_network(network *netp)
             net.truth = l.output;
         }
     }
+    // 计算网络的总损失
     calc_network_cost(netp);
 }
 
@@ -273,15 +276,19 @@ void backward_network(network *netp)
     network orig = net;
     for(i = net.n-1; i >= 0; --i){
         layer l = net.layers[i];
+        // 可设置标记，前面的层不进行更新
         if(l.stopbackward) break;
         if(i == 0){
             net = orig;
         }else{
             layer prev = net.layers[i-1];
+            // net.input是前一层的输出
             net.input = prev.output;
+            // net.delta是前一层的损失
             net.delta = prev.delta;
         }
         net.index = i;
+        // 计算得到prev.delta，即通过后一层的增量计算出前一层的增量
         l.backward(l, net);
     }
 }

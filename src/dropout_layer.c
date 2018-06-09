@@ -41,12 +41,14 @@ void forward_dropout_layer(dropout_layer l, network net)
     if (!net.train) return;
     for(i = 0; i < l.batch * l.inputs; ++i){
         float r = rand_uniform(0, 1);
+        // 记录概率值，供backward时使用
         l.rand[i] = r;
         if(r < l.probability) net.input[i] = 0;
         else net.input[i] *= l.scale;
     }
 }
 
+// dropout层没有参数，所以不需要进行参数更新．仅传递残差．
 void backward_dropout_layer(dropout_layer l, network net)
 {
     int i;
