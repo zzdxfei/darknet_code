@@ -4,6 +4,17 @@
 
 #include <stdio.h>
 
+/**
+ * @brief 生成一个route层
+ * 仅是把如果层在channels上进行了concatenate，不涉及到数学运算
+ *
+ * @param batch  batch size
+ * @param n  输入的层的数量
+ * @param input_layers 输入的层的索引
+ * @param input_sizes  输入的层的输出的长度
+ *
+ * @return route层
+ */
 route_layer make_route_layer(int batch, int n, int *input_layers, int *input_sizes)
 {
     fprintf(stderr,"route ");
@@ -19,6 +30,8 @@ route_layer make_route_layer(int batch, int n, int *input_layers, int *input_siz
         fprintf(stderr," %d", input_layers[i]);
         outputs += input_sizes[i];
     }
+
+    // 计算输入输出的长度
     fprintf(stderr, "\n");
     l.outputs = outputs;
     l.inputs = outputs;
@@ -76,9 +89,13 @@ void forward_route_layer(const route_layer l, network net)
     int i, j;
     int offset = 0;
     for(i = 0; i < l.n; ++i){
+        // 输入层i
         int index = l.input_layers[i];
+        // 输入层i的输出数组
         float *input = net.layers[index].output;
+        // 输入层i的输出长度
         int input_size = l.input_sizes[i];
+        // 进行数据的copy
         for(j = 0; j < l.batch; ++j){
             copy_cpu(input_size, input + j*input_size, 1, l.output + offset + j*l.outputs, 1);
         }
@@ -95,6 +112,7 @@ void backward_route_layer(const route_layer l, network net)
         float *delta = net.layers[index].delta;
         int input_size = l.input_sizes[i];
         for(j = 0; j < l.batch; ++j){
+            // 输入层的残差等于route层的残差
             axpy_cpu(input_size, 1, l.delta + offset + j*l.outputs, 1, delta + j*input_size, 1);
         }
         offset += input_size;

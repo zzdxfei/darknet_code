@@ -598,17 +598,21 @@ route_layer parse_route(list *options, size_params params, network *net)
     char *l = option_find(options, "layers");
     int len = strlen(l);
     if(!l) error("Route Layer must specify input layers");
+    // 统计输入层的个数
     int n = 1;
     int i;
     for(i = 0; i < len; ++i){
         if (l[i] == ',') ++n;
     }
 
+    // 存储输入层的编号
     int *layers = calloc(n, sizeof(int));
+    // 存储输入层输出的长度
     int *sizes = calloc(n, sizeof(int));
     for(i = 0; i < n; ++i){
         int index = atoi(l);
         l = strchr(l, ',')+1;
+        // 如果是负数，则视为偏移量
         if(index < 0) index = params.index + index;
         layers[i] = index;
         sizes[i] = net->layers[index].outputs;
@@ -617,6 +621,7 @@ route_layer parse_route(list *options, size_params params, network *net)
 
     route_layer layer = make_route_layer(batch, n, layers, sizes);
 
+    // route层的第一个输入
     convolutional_layer first = net->layers[layers[0]];
     layer.out_w = first.out_w;
     layer.out_h = first.out_h;
@@ -625,6 +630,7 @@ route_layer parse_route(list *options, size_params params, network *net)
         int index = layers[i];
         convolutional_layer next = net->layers[index];
         if(next.out_w == first.out_w && next.out_h == first.out_h){
+            // 在channels上进行concatenate
             layer.out_c += next.out_c;
         }else{
             layer.out_h = layer.out_w = layer.out_c = 0;
