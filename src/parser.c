@@ -176,16 +176,16 @@ layer parse_deconvolutional(list *options, size_params params)
 
 convolutional_layer parse_convolutional(list *options, size_params params)
 {
-    int n = option_find_int(options, "filters",1);
-    int size = option_find_int(options, "size",1);
+    int n = option_find_int(options, "filters",1);  // output的通道个数
+    int size = option_find_int(options, "size",1);  // 卷积核的尺寸
     int stride = option_find_int(options, "stride",1);
     int pad = option_find_int_quiet(options, "pad",0);
-    int padding = option_find_int_quiet(options, "padding",0);
-    int groups = option_find_int_quiet(options, "groups", 1);
+    int padding = option_find_int_quiet(options, "padding",0);  // pad的长度
+    int groups = option_find_int_quiet(options, "groups", 1);  // 分组个数
     if(pad) padding = size/2;
 
     char *activation_s = option_find_str(options, "activation", "logistic");
-    ACTIVATION activation = get_activation(activation_s);
+    ACTIVATION activation = get_activation(activation_s);  // 激活函数类型
 
     int batch,h,w,c;
     h = params.h;

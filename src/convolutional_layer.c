@@ -173,7 +173,29 @@ void cudnn_convolutional_setup(layer *l)
 #endif
 #endif
 
-convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int n, int groups, int size, int stride, int padding, ACTIVATION activation, int batch_normalize, int binary, int xnor, int adam)
+/**
+ * @brief 
+ *
+ * @param batch  batch size
+ * @param h
+ * @param w
+ * @param c
+ * @param n  output的通道个数
+ * @param groups  分组个数
+ * @param size  卷积核的大小
+ * @param stride  卷积的步长
+ * @param padding  pad的长度
+ * @param activation  激活函数类型
+ * @param batch_normalize  是否进行批归一化
+ * @param binary  为0
+ * @param xnor  为0
+ * @param adam  ???
+ *
+ * @return 
+ */
+convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int n,
+        int groups, int size, int stride, int padding, ACTIVATION activation,
+        int batch_normalize, int binary, int xnor, int adam)
 {
     int i;
     convolutional_layer l = {0};
@@ -192,12 +214,17 @@ convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int
     l.pad = padding;
     l.batch_normalize = batch_normalize;
 
+    // 权重
     l.weights = calloc(c/groups*n*size*size, sizeof(float));
+    // 权重改变量
     l.weight_updates = calloc(c/groups*n*size*size, sizeof(float));
 
+    // 偏置量
     l.biases = calloc(n, sizeof(float));
+    // 偏置量改变量
     l.bias_updates = calloc(n, sizeof(float));
 
+    // 数组长度
     l.nweights = c/groups*n*size*size;
     l.nbiases = n;
 
@@ -212,10 +239,13 @@ convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int
     l.out_h = out_h;
     l.out_w = out_w;
     l.out_c = n;
+    // 输出长度
     l.outputs = l.out_h * l.out_w * l.out_c;
     l.inputs = l.w * l.h * l.c;
 
+    // 卷积层的输出
     l.output = calloc(l.batch*l.outputs, sizeof(float));
+    // 卷积层的增量
     l.delta  = calloc(l.batch*l.outputs, sizeof(float));
 
     l.forward = forward_convolutional_layer;
@@ -231,6 +261,7 @@ convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int
         l.binary_input = calloc(l.inputs*l.batch, sizeof(float));
     }
 
+    // 对卷积层进行batch normalize
     if(batch_normalize){
         l.scales = calloc(n, sizeof(float));
         l.scale_updates = calloc(n, sizeof(float));
@@ -322,7 +353,9 @@ convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int
     l.workspace_size = get_workspace_size(l);
     l.activation = activation;
 
-    fprintf(stderr, "conv  %5d %2d x%2d /%2d  %4d x%4d x%4d   ->  %4d x%4d x%4d  %5.3f BFLOPs\n", n, size, size, stride, w, h, c, l.out_w, l.out_h, l.out_c, (2.0 * l.n * l.size*l.size*l.c/l.groups * l.out_h*l.out_w)/1000000000.);
+    fprintf(stderr, "conv  %5d %2d x%2d /%2d  %4d x%4d x%4d   ->  %4d x%4d x%4d  %5.3f BFLOPs\n",
+            n, size, size, stride, w, h, c, l.out_w, l.out_h, l.out_c,
+            (2.0 * l.n * l.size*l.size*l.c/l.groups * l.out_h*l.out_w)/1000000000.);
 
     return l;
 }
@@ -446,6 +479,7 @@ void forward_convolutional_layer(convolutional_layer l, network net)
 {
     int i, j;
 
+    // 初始化为0
     fill_cpu(l.outputs*l.batch, 0, l.output, 1);
 
     if(l.xnor){
