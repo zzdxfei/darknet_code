@@ -489,17 +489,23 @@ void forward_convolutional_layer(convolutional_layer l, network net)
         net.input = l.binary_input;
     }
 
-    int m = l.n/l.groups;
-    int k = l.size*l.size*l.c/l.groups;
-    int n = l.out_w*l.out_h;
+    int m = l.n/l.groups;  // 每组的输出特征图的个数
+    int k = l.size*l.size*l.c/l.groups;  // 每组的每个输出特征图对应的卷积核大小
+    int n = l.out_w*l.out_h;  // 输出特征图的尺寸
     for(i = 0; i < l.batch; ++i){
+        // 对于每组
         for(j = 0; j < l.groups; ++j){
+            // 权重的初始地址
             float *a = l.weights + j*l.nweights/l.groups;
+            // 存放中间的转化数据
             float *b = net.workspace;
+            // 最终结果的初始地址
             float *c = l.output + (i*l.groups + j)*n*m;
 
+            // 转化图像到数组
             im2col_cpu(net.input + (i*l.groups + j)*l.c/l.groups*l.h*l.w,
                 l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
+            // 由b计算最终的结果到c
             gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
         }
     }
@@ -531,16 +537,21 @@ void backward_convolutional_layer(convolutional_layer l, network net)
 
     for(i = 0; i < l.batch; ++i){
         for(j = 0; j < l.groups; ++j){
+            // 残差初始地址
             float *a = l.delta + (i*l.groups + j)*m*k;
+            // 中间结果存放地址
             float *b = net.workspace;
+            // 权重更新量
             float *c = l.weight_updates + j*l.nweights/l.groups;
 
             float *im = net.input+(i*l.groups + j)*l.c/l.groups*l.h*l.w;
 
             im2col_cpu(im, l.c/l.groups, l.h, l.w, 
                     l.size, l.stride, l.pad, b);
+            // 计算权重更新量
             gemm(0,1,m,n,k,1,a,k,b,k,1,c,n);
 
+            // 将残差转化为输入的形式，供前一层使用
             if(net.delta){
                 a = l.weights + j*l.nweights/l.groups;
                 b = l.delta + (i*l.groups + j)*m*k;
