@@ -96,6 +96,23 @@ void resize_yolo_layer(layer *l, int w, int h)
 #endif
 }
 
+/**
+ * @brief anchors是相对于网络输入大小的尺寸
+ *
+ * @param x
+ * @param biases
+ * @param n
+ * @param index
+ * @param i
+ * @param j
+ * @param lw  该层的输入的宽
+ * @param lh  该层的输入的高
+ * @param w  网络输入的宽
+ * @param h  网络输入的高
+ * @param stride  该层的输入一个通道的长度
+ *
+ * @return 
+ */
 box get_yolo_box(float *x, float *biases, int n, int index, int i, int j, int lw, int lh, int w, int h, int stride)
 {
     box b;
@@ -106,7 +123,9 @@ box get_yolo_box(float *x, float *biases, int n, int index, int i, int j, int lw
     return b;
 }
 
+
 // @param scale  delta放缩的比例
+// TODO(zzdxfei)
 float delta_yolo_box(box truth, float *x, float *biases, int n, int index, int i, int j, 
         int lw, int lh, int w, int h, float *delta, float scale, int stride)
 {
@@ -126,13 +145,17 @@ float delta_yolo_box(box truth, float *x, float *biases, int n, int index, int i
 }
 
 
-// @param output  yolo层的输出
-// @param delta  损失数组
-// @param index  class在output中的位置索引
-// @param class  类别索引
-// @param classes  总的类别个数
-// @param stride  l.w * l.h
-// @param avg_cat  对ground truth类进行概率相加
+/*
+ * @brief 
+ * 
+ * @param output  yolo层的输出
+ * @param delta  损失数组
+ * @param index  class在output中的位置索引
+ * @param class  类别索引
+ * @param classes  总的类别个数
+ * @param stride  l.w * l.h
+ * @param avg_cat  对ground truth类进行概率相加
+ */
 void delta_yolo_class(float *output, float *delta, int index, int class, int classes, int stride, float *avg_cat)
 {
     int n;
