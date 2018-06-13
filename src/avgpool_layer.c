@@ -2,6 +2,18 @@
 #include "cuda.h"
 #include <stdio.h>
 
+// zzdxfei finished.
+
+/**
+ * @brief (b, c, w, h) -> (b, c, 1, 1)
+ *
+ * @param batch
+ * @param w
+ * @param h
+ * @param c
+ *
+ * @return 
+ */
 avgpool_layer make_avgpool_layer(int batch, int w, int h, int c)
 {
     fprintf(stderr, "avg                     %4d x%4d x%4d   ->  %4d\n",  w, h, c, c);
@@ -42,13 +54,15 @@ void forward_avgpool_layer(const avgpool_layer l, network net)
     int b,i,k;
 
     for(b = 0; b < l.batch; ++b){
-        for(k = 0; k < l.c; ++k){
+        for(k = 0; k < l.c; ++k){  // 对于每一个通道
             int out_index = k + b*l.c;
             l.output[out_index] = 0;
+            // 对一个通道内的所有值相加
             for(i = 0; i < l.h*l.w; ++i){
                 int in_index = i + l.h*l.w*(k + b*l.c);
                 l.output[out_index] += net.input[in_index];
             }
+            // 求平均值
             l.output[out_index] /= l.h*l.w;
         }
     }
@@ -63,6 +77,7 @@ void backward_avgpool_layer(const avgpool_layer l, network net)
             int out_index = k + b*l.c;
             for(i = 0; i < l.h*l.w; ++i){
                 int in_index = i + l.h*l.w*(k + b*l.c);
+                // 计算输入中每个像素点的残差，net.delta表示的是前一层的残差
                 net.delta[in_index] += l.delta[out_index] / (l.h*l.w);
             }
         }
