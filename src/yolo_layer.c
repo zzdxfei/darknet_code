@@ -115,6 +115,7 @@ void resize_yolo_layer(layer *l, int w, int h)
  */
 box get_yolo_box(float *x, float *biases, int n, int index, int i, int j, int lw, int lh, int w, int h, int stride)
 {
+    // x中存放的是相对于anchor要做出的改变量
     box b;
     b.x = (i + x[index + 0*stride]) / lw;
     b.y = (j + x[index + 1*stride]) / lh;
@@ -123,17 +124,21 @@ box get_yolo_box(float *x, float *biases, int n, int index, int i, int j, int lw
     return b;
 }
 
-
-// @param scale  delta放缩的比例
-// TODO(zzdxfei)
+/**
+ * 对于特定的anchor,在进行训练时，首先获得gt相对于anchor的改变量，作为回归目标。
+ * 在进行预测时，网络输出该回归目标，再对anchor做相应的变化，得到预测的box
+ * @param scale  delta放缩的比例
+ */
 float delta_yolo_box(box truth, float *x, float *biases, int n, int index, int i, int j, 
         int lw, int lh, int w, int h, float *delta, float scale, int stride)
 {
     box pred = get_yolo_box(x, biases, n, index, i, j, lw, lh, w, h, stride);
     float iou = box_iou(pred, truth);
 
+    // truth.x, truth.y在[0, 1]内，相对于原图和特征图的比例不变
     float tx = (truth.x*lw - i);
     float ty = (truth.y*lh - j);
+    // truth.w * w得到gt相对于原始图片的真实宽度，所以biases也是相对于原始图片的
     float tw = log(truth.w*w / biases[2*n]);
     float th = log(truth.h*h / biases[2*n + 1]);
 
@@ -143,7 +148,6 @@ float delta_yolo_box(box truth, float *x, float *biases, int n, int index, int i
     delta[index + 3*stride] = scale * (th - x[index + 3*stride]);
     return iou;
 }
-
 
 /*
  * @brief 
