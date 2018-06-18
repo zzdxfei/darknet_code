@@ -627,9 +627,9 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
         //resize_network(net, sized.w, sized.h);
         layer l = net->layers[net->n-1];
 
-
         float *X = sized.data;
         time=what_time_is_it_now();
+        // TODO(zzdxfei) work here
         network_predict(net, X);
         printf("%s: Predicted in %f seconds.\n", input, what_time_is_it_now()-time);
         int nboxes = 0;

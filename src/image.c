@@ -982,10 +982,21 @@ void letterbox_image_into(image im, int w, int h, image boxed)
     free_image(resized);
 }
 
+/**
+ * @brief 
+ *
+ * @param im 测试图片
+ * @param w  网络输入的宽度
+ * @param h  网络输入的高度
+ *
+ * @return 
+ */
 image letterbox_image(image im, int w, int h)
 {
     int new_w = im.w;
     int new_h = im.h;
+    // 选择比例相差小的作为不变的边，保持原有图片的宽高比
+    // 这样能够保证w*h区域是够用的
     if (((float)w/im.w) < ((float)h/im.h)) {
         new_w = w;
         new_h = (im.h * w)/im.w;
@@ -994,10 +1005,13 @@ image letterbox_image(image im, int w, int h)
         new_w = (im.w * h)/im.h;
     }
     image resized = resize_image(im, new_w, new_h);
+    // make一个新的图片，满足网络的大小
     image boxed = make_image(w, h, im.c);
+    // 边缘部分赋值为.5
     fill_image(boxed, .5);
     //int i;
     //for(i = 0; i < boxed.w*boxed.h*boxed.c; ++i) boxed.data[i] = 0;
+    // (., ., dx, dy)表示resized在boxed中的左上角位置
     embed_image(resized, boxed, (w-new_w)/2, (h-new_h)/2); 
     free_image(resized);
     return boxed;
@@ -1369,6 +1383,7 @@ void saturate_exposure_image(image im, float sat, float exposure)
     constrain_image(im);
 }
 
+// TODO(zzdxfei)
 image resize_image(image im, int w, int h)
 {
     image resized = make_image(w, h, im.c);   
