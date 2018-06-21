@@ -1383,40 +1383,55 @@ void saturate_exposure_image(image im, float sat, float exposure)
     constrain_image(im);
 }
 
-// TODO(zzdxfei)
+/**
+ * @brief 对图像进行双线性插值
+ *
+ * @param im
+ * @param w 插值后的新宽度
+ * @param h 插值后的新高度
+ *
+ * @return 
+ */
 image resize_image(image im, int w, int h)
 {
-    image resized = make_image(w, h, im.c);   
+    image resized = make_image(w, h, im.c);
     image part = make_image(w, im.h, im.c);
     int r, c, k;
     float w_scale = (float)(im.w - 1) / (w - 1);
     float h_scale = (float)(im.h - 1) / (h - 1);
+    // 进行水平方向上的放缩
     for(k = 0; k < im.c; ++k){
         for(r = 0; r < im.h; ++r){
             for(c = 0; c < w; ++c){
                 float val = 0;
+                // 每行的最后一个像素
                 if(c == w-1 || im.w == 1){
                     val = get_pixel(im, im.w-1, r, k);
                 } else {
-                    float sx = c*w_scale;
+                    // sx为原图上的横坐标
+                    float sx = c*w_scale;  // c为part图上的横坐标
                     int ix = (int) sx;
                     float dx = sx - ix;
+                    // 线性插值获得part图的像素值
                     val = (1 - dx) * get_pixel(im, ix, r, k) + dx * get_pixel(im, ix+1, r, k);
                 }
                 set_pixel(part, c, r, k, val);
             }
         }
     }
+    // 通过part计算resized图片上的像素值
     for(k = 0; k < im.c; ++k){
         for(r = 0; r < h; ++r){
             float sy = r*h_scale;
             int iy = (int) sy;
             float dy = sy - iy;
+            // 插值第一个像素
             for(c = 0; c < w; ++c){
                 float val = (1-dy) * get_pixel(part, c, iy, k);
                 set_pixel(resized, c, r, k, val);
             }
             if(r == h-1 || im.h == 1) continue;
+            // 插值第二个像素
             for(c = 0; c < w; ++c){
                 float val = dy * get_pixel(part, c, iy+1, k);
                 add_pixel(resized, c, r, k, val);
@@ -1427,7 +1442,6 @@ image resize_image(image im, int w, int h)
     free_image(part);
     return resized;
 }
-
 
 void test_resize(char *filename)
 {
