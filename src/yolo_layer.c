@@ -341,6 +341,9 @@ void forward_yolo_layer(const layer l, network net)
     }
     // mag_array 计算数组的平方根
     *(l.cost) = pow(mag_array(l.delta, l.outputs * l.batch), 2);
+    /********************************************************************** 
+     * 出现-nan的情况，是因为最佳的anchor并不在本层
+     *********************************************************************/
     printf("Region %d Avg IOU: %f, Class: %f, Obj: %f, No Obj: %f, .5R: %f, .75R: %f,  count: %d\n",
        net.index, avg_iou/count, avg_cat/class_count, avg_obj/count, avg_anyobj/(l.w*l.h*l.n*l.batch), recall/count, recall75/count, count);
 }
