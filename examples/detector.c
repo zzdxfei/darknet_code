@@ -640,7 +640,6 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
         // 对检测对象进行NMS
         if (nms) do_nms_sort(dets, nboxes, l.classes, nms);
 
-        // TODO(zzdxfei) work here
         draw_detections(im, dets, nboxes, thresh, names, alphabet, l.classes);
         free_detections(dets, nboxes);
         if(outfile){
