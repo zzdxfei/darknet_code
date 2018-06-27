@@ -426,6 +426,21 @@ void avg_flipped_yolo(layer l)
     }
 }
 
+/**
+ * @brief 
+ *
+ * @param l  YOLO层
+ * @param w  原始图片的高度
+ * @param h  原始图片的宽度
+ * @param netw  网络输入宽度
+ * @param neth  网络输入高度
+ * @param thresh
+ * @param map
+ * @param relative
+ * @param dets
+ *
+ * @return 
+ */
 int get_yolo_detections(layer l, int w, int h, int netw, int neth, float thresh, int *map, int relative, detection *dets)
 {
     int i,j,n;
@@ -433,15 +448,19 @@ int get_yolo_detections(layer l, int w, int h, int netw, int neth, float thresh,
     if (l.batch == 2) avg_flipped_yolo(l);
     int count = 0;
     for (i = 0; i < l.w*l.h; ++i){
+        // anchor中心的坐标
         int row = i / l.w;
         int col = i % l.w;
+        // 遍历每种anchor
         for(n = 0; n < l.n; ++n){
+            // anchor包含目标的概率的存放位置
             int obj_index  = entry_index(l, 0, n*l.w*l.h + i, 4);
             float objectness = predictions[obj_index];  // 包含目标的概率
             if(objectness <= thresh) continue;
 
             // 存储box
             int box_index  = entry_index(l, 0, n*l.w*l.h + i, 0);
+            // 相对于网络输入的真实大小
             dets[count].bbox = get_yolo_box(predictions, l.biases, l.mask[n], box_index, col, row, l.w, l.h, netw, neth, l.w*l.h);
             dets[count].objectness = objectness;
             dets[count].classes = l.classes;
@@ -453,6 +472,8 @@ int get_yolo_detections(layer l, int w, int h, int netw, int neth, float thresh,
             ++count;
         }
     }
+
+    // 在此处使用到了原始图片的尺寸，和预处理为逆过程
     correct_yolo_boxes(dets, count, w, h, netw, neth, relative);
     return count;
 }

@@ -505,8 +505,11 @@ float *network_predict(network *net, float *input)
 {
     network orig = *net;
     net->input = input;
+    // 标签指针为0
     net->truth = 0;
+    // 设置测试模式
     net->train = 0;
+    // 残差指针为0
     net->delta = 0;
     forward_network(net);
     float *out = net->output;
@@ -518,11 +521,13 @@ int num_detections(network *net, float thresh)
 {
     int i;
     int s = 0;
+    // 对于每一个YOLO层，计算>thresh目标的个数
     for(i = 0; i < net->n; ++i){
         layer l = net->layers[i];
         if(l.type == YOLO){
             s += yolo_num_detections(l, thresh);
         }
+        // TODO(zzdxfei) ???
         if(l.type == DETECTION || l.type == REGION){
             s += l.w*l.h*l.n;
         }
@@ -534,11 +539,17 @@ detection *make_network_boxes(network *net, float thresh, int *num)
 {
     layer l = net->layers[net->n - 1];
     int i;
+
+    // 获取网络输出中>thresh的目标的个数
     int nboxes = num_detections(net, thresh);
     if(num) *num = nboxes;
+
+    // 分配存放检测目标的内存
     detection *dets = calloc(nboxes, sizeof(detection));
     for(i = 0; i < nboxes; ++i){
+        // 每个类别的概率
         dets[i].prob = calloc(l.classes, sizeof(float));
+        // 默认为0
         if(l.coords > 4){
             dets[i].mask = calloc(l.coords-4, sizeof(float));
         }
@@ -546,6 +557,18 @@ detection *make_network_boxes(network *net, float thresh, int *num)
     return dets;
 }
 
+/**
+ * @brief 
+ *
+ * @param net
+ * @param w  原始图片的宽
+ * @param h  原始图片的高
+ * @param thresh  0.5
+ * @param hier  0.5
+ * @param map  0
+ * @param relative  1
+ * @param dets  输出
+ */
 void fill_network_boxes(network *net, int w, int h, float thresh, float hier, int *map, int relative, detection *dets)
 {
     int j;
@@ -553,6 +576,7 @@ void fill_network_boxes(network *net, int w, int h, float thresh, float hier, in
         layer l = net->layers[j];
         if(l.type == YOLO){
             int count = get_yolo_detections(l, w, h, net->w, net->h, thresh, map, relative, dets);
+            // 指针向后移动count个
             dets += count;
         }
         if(l.type == REGION){
@@ -566,10 +590,25 @@ void fill_network_boxes(network *net, int w, int h, float thresh, float hier, in
     }
 }
 
-// thresh, 输出大于thresh的包围盒
+/**
+ * @brief 
+ *
+ * @param net
+ * @param w  原始图片的宽
+ * @param h  原始图片的高
+ * @param thresh  输出大于thresh的包围盒 默认0.5
+ * @param hier  默认0.5
+ * @param map  默认0
+ * @param relative  默认1
+ * @param num  输出，检测到的目标个数
+ *
+ * @return 
+ */
 detection *get_network_boxes(network *net, int w, int h, float thresh, float hier, int *map, int relative, int *num)
 {
+    // 统计检测到的目标的个数，分别存储空间
     detection *dets = make_network_boxes(net, thresh, num);
+    // 写入检测对象
     fill_network_boxes(net, w, h, thresh, hier, map, relative, dets);
     return dets;
 }

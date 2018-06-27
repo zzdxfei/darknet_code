@@ -515,12 +515,15 @@ typedef struct{
     float x, y, w, h;
 } box;
 
+/**
+ * @brief 每个检测对象包括一个box以及相关信息
+ */
 typedef struct detection{
     box bbox;
-    int classes;
-    float *prob;
+    int classes;  // 类别个数,voc中为20
+    float *prob;  // 每个类别的概率， 目标概率*类别概率，小于thresh则置0
     float *mask;
-    float objectness;
+    float objectness;  // 目标概率
     int sort_class;
 } detection;
 
